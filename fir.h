@@ -3,7 +3,11 @@
 #define __FIR_FILT_H__
 
 void fir_init();
-int fir_process(const void* input, void *output, unsigned long numFrames);
 void fir_destroy();
+int fir_process(
+    const void* input,
+    void *output,
+    unsigned long numFrames,
+    unsigned int filter);
 
 #endif

@@ -1,68 +1,69 @@
 /* fir.c */
 #include <string.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include "fir.h"
 
-#define NUM_TAPS 512
+#define NUM_TAPS 63
+#define BUF_SIZE 512
 
-static double circular_buffer[NUM_TAPS];
-static const double taps[NUM_TAPS] = {
-    0.00212772,  0.0022048 ,  0.00240508,  0.00272921,  0.00317643,
-    0.00374454,  0.00442991,  0.00522754,  0.00613105,  0.00713279,
-    0.00822388,  0.00939434,  0.01063316,  0.01192843,  0.01326749,
-    0.01463704,  0.01602331,  0.01741222,  0.01878951,  0.02014096,
-    0.02145249,  0.02271036,  0.02390133,  0.02501279,  0.02603293,
-    0.02695089,  0.02775685,  0.02844218,  0.02899951,  0.02942284,
-    0.02970763,  0.0298508 ,  0.0298508 ,  0.02970763,  0.02942284,
-    0.02899951,  0.02844218,  0.02775685,  0.02695089,  0.02603293,
-    0.02501279,  0.02390133,  0.02271036,  0.02145249,  0.02014096,
-    0.01878951,  0.01741222,  0.01602331,  0.01463704,  0.01326749,
-    0.01192843,  0.01063316,  0.00939434,  0.00822388,  0.00713279,
-    0.00613105,  0.00522754,  0.00442991,  0.00374454,  0.00317643,
-    0.00272921,  0.00240508,  0.0022048 ,  0.00212772
-};
-static void circular_buffer_insert(const double input);
-static double circular_buffer_shift();
-
+static float insamp[BUF_SIZE];
+/* coefficients stored in taps.c */
+extern const float lowpass[NUM_TAPS];
+extern const float bandpass[NUM_TAPS];
+extern const float highpass[NUM_TAPS];
 
 void fir_init()
 {
-    memset(circular_buffer, 0.0f, sizeof(double) * NUM_TAPS);
+    memset(&insamp[0], 0.0f, sizeof(float) * BUF_SIZE);
 }
 
-int fir_process(const void* input, void *output, unsigned long numFrames)
+int fir_process(const void* input, void *output, unsigned long numFrames, unsigned int filter)
 {
-    unsigned long i;
-    double *out = (double *)output, *in = (double *)input;
+    float acc; // accumulator for MACs
+    const float *coeffp; // pointer to coefficients
+    const float *in = (float*)input;
+    float *out = (float *)output;
+    unsigned int n;
+    unsigned int k;
+ 
+    // put the new samples at the high end of the buffer
+    memcpy(&insamp[NUM_TAPS - 1], input, sizeof(float) * numFrames);
+ 
+    // convolve input samples with filter taps
+    for (n = 0; n < numFrames; ++n) {
+        switch(filter)
+        {
+            case 0:
+            coeffp = &lowpass[0];
+            break;
+            case 1:
+            coeffp = &bandpass[0];
+            break;
+            default:
+            case 2:
+            coeffp = &highpass[0];
+            break;
+        }
 
-    for(i = 0; i < numFrames; ++i)
-    {
-        *out++ = circular_buffer_shift();
-        circular_buffer_insert(*in++);
+        in = &insamp[NUM_TAPS - 1 + n];
+        acc = 0;
+        
+        for (k = 0; k < NUM_TAPS; ++k) {
+            acc += (*coeffp++) * (*in--);
+        }
+        
+        *out++ = acc;
     }
+    
+    // shift input samples back in time for next time
+    memmove(&insamp[0], &insamp[numFrames], sizeof(float) * (NUM_TAPS - 1));
 
     return 0;
-}
+} 
 
 void fir_destroy()
 {
     /* No mallocs yet */
     return;
-}
-
-static void circular_buffer_insert(const double input)
-{
-    circular_buffer[0] = input * taps[0];
-}
-
-static double circular_buffer_shift()
-{
-    double ret = circular_buffer[NUM_TAPS - 1];
-    unsigned long i;
-
-    for(i = 0; i < NUM_TAPS - 1; ++i)
-    {
-        circular_buffer[i+1] = circular_buffer[i] * taps[i + 1];
-    }
-
-    return ret;
 }
